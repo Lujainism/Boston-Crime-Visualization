@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Heatmaps</title>
+
+    <!-- jQuery CSS -->
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.2.2/jquery.min.js"></script>
+
+    <!-- Bootsrap CSS -->
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css" integrity="sha384-1q8mTJOASx8j1Au+a5WDVnPi2lkFfwwEAa8hDDdjZlpLegxhjVME1fgjWPGmkzs7" crossorigin="anonymous">
+
+    <!-- data file -->
+    <script src='data.js'></script>
+</head>
+
+<body>
+    <div class="container-fluid">
+        <div class="row">
+            <div class="span12">
+                <div class="btn-group btn-group-lg btn-group-justified">
+                    <div class="btn-group">
+                        <button type="button" onclick="changeCrime(this,'Arrest')" class="crimeButtons btn btn-large btn-primary">Arrest</button>
+                    </div>
+                    <div class="btn-group">
+                        <button type="button" onclick="changeCrime(this,'AUTO THEFT')" class="crimeButtons btn ">Auto Theft</button>
+                    </div>
+                    <div class="btn-group">
+                        <button type="button" onclick="changeCrime(this,'DRUG CHARGES')" class="crimeButtons btn ">Drug Charges</button>
+                    </div>
+                    <div class="btn-group">
+                        <button type="button" onclick="changeCrime(this,'Prostitution')" class="crimeButtons btn ">Prostitution</button>
+                    </div>
+                    <div class="btn-group">
+                        <button type="button" onclick="changeCrime(this,'GAMBLING OFFENSE')" class="crimeButtons btn ">Gambling</button>
+                    </div>
+                    <div class="btn-group">
+                        <button type="button" onclick="changeCrime(this,'HateCrim')" class="crimeButtons btn ">Hate Crime</button>
+                    </div>
+                    <div class="btn-group">
+                        <button type="button" onclick="changeCrime(this,'ROBBERY')" class="crimeButtons btn ">Robbery</button>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+        <div class="row">
+            <div class="span12">
+                <h1 id="header" align="center"></h1>
+                <hr>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="span12">
+                <center>
+
+                    <form class="form-inline">
+                        <label style="font-size: 18px;" for="rg-from">Enter the desired address: </label>
+                        <div class="form-group">
+                            <input type="text" id="address" name="rg-from" value="Newbury Street, Boston" class="form-control " style="width:400px">
+
+                        </div>
+                    </form>
+
+                    <hr>
+                    <button class="btn btn-success" id="toggleButton" onclick="toggleHeatmap()">Show Success Rate heatmap</button>
+                    |
+                    <label class="">Radius</label>
+                    <button class="btn btn-primary" onclick="increaseRadius()"><span class="glyphicon glyphicon-plus"></span>
+                    </button>
+                    <button class="btn btn-primary" onclick="decreaseRadius()"><span class="glyphicon glyphicon-minus"></span>
+                    </button>
+                    |
+                    <button class="btn btn-primary" onclick="changeGradient()">Change gradient</button>
+                    |
+                    <button class="btn btn-primary" onclick="changeOpacity()">Change opacity</button>
+                </center>
+            </div>
+        </div>
+        <div class="row">
+            <div class="span12">
+                <center>
+                </center>
+                <div id="map" style="width:100%;height:1000px;">
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        //crime type:
+        var crime;
+        var crimeData;
+
+        function changeCrime(e, type) {
+            $(".crimeButtons").removeClass("btn-primary");
+            e.classList.add("btn-primary");
+            crime = type;
+
+            //set header:
+            $("#header").html(e.textContent + " Related Crime Incidents Across Boston");
+
+            //filter data  
+            crimeData = data.filter(crimeFilter);
+
+            //update map
+            initMap();
+        }
+
+
+        //crime filter
+        function crimeFilter(value) {
+            return value.INCIDENT_TYPE_DESCRIPTION === crime;
+        }
+
+
+        $("#address").bind("keypress", {}, keypressInBox);
+
+        function keypressInBox(e) {
+            var code = (e.keyCode ? e.keyCode : e.which);
+            if (code == 13) { //Enter keycode                        
+                e.preventDefault();
+                $.ajax({
+                    url: 'https://maps.googleapis.com/maps/api/geocode/json?address=' + $("#address").val(),
+                }).done(function(data) {
+                    loc = data.results[0].geometry.location;
+                    addMarker(loc.lat, loc.lng);
+                })
+            }
+        };
+
+        //return percentage %
+        function getSuccessRate(lat, lng) {
+            //filtering. get all crimes with a radius d:
+            radius_limit = 0.3; // in km
+            var filtered_crimes = [];
+            for (var i = 0; i < crimeData.length; i++) {
+                d = getDistance(crimeData[i].lat, crimeData[i].lng, lat, lng);
+
+                if (d < radius_limit) {
+                    filtered_crimes.push(crimeData[i]);
+                }
+            }
+
+            //this function calculates the success rate. 
+            //console.log(filtered_crimes.length);
+            successful = filtered_crimes.filter(isSuccess);
+
+            var successRate = 0;
+            if (filtered_crimes.length != 0) {
+                successRate = Math.round((successful.length / filtered_crimes.length) * 100);
+            }
+            return successRate;
+        }
+
+        //adding market on clicking
+        function addMarker(lat, lng) {
+            //get address from lat,lng
+            $.ajax({
+                url: 'http://maps.googleapis.com/maps/api/geocode/json?latlng=' + lat + ',' + lng,
+            }).done(function(data) {
+                formatted_address = data.results[0].formatted_address;
+                successRate = getSuccessRate(lat, lng);
+                //add marker:
+                marker = new google.maps.Marker({
+                    map: map,
+                    draggable: false,
+                    title: "The crime success rate here is " + successRate.toString() + '%',
+                    label: Math.round(successRate / 10.0).toString(),
+                    animation: google.maps.Animation.DROP,
+                    position: {
+                        lat: lat,
+                        lng: lng
+                    }
+                });
+
+                $("#msg").html('<h3><span class="label label-success">The crime success rate at <u>' + formatted_address + '</u> is: <b>' + successRate + '%</b></span></h3>');
+            })
+        }
+
+
+        function isSuccess(value) {
+            return (!(value.WEAPONTYPE === "Unarmed") && (value.Shooting === "No") && !(value.SHIFT === "Day"));
+        }
+
+        //get Distance in km between two geo locations
+        function getDistance(lat1, lon1, lat2, lon2) {
+            var R = 6371; // Radius of the earth in km
+            var dLat = deg2rad(lat2 - lat1); // deg2rad below
+            var dLon = deg2rad(lon2 - lon1);
+            var a =
+                Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) *
+                Math.sin(dLon / 2) * Math.sin(dLon / 2);
+            var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            var d = R * c; // Distance in km
+            return d;
+        }
+
+        function deg2rad(deg) {
+            return deg * (Math.PI / 180)
+        }
+
+
+
+        //Google Maps API
+
+        // This example requires the Visualization library. Include the libraries=visualization
+        // parameter when you first load the API. For example:
+        // <script src="https://maps.googleapis.com/maps/api/js?key=YOUR_API_KEY&libraries=visualization">
+
+        var map, heatmap;
+
+        function initMap() {
+            map = new google.maps.Map(document.getElementById('map'), {
+                zoom: 13,
+                center: {
+                    lat: 42.32,
+                    lng: -71.09
+                },
+                mapTypeId: google.maps.MapTypeId.SATELLITE
+            });
+
+            //Add listener on mouse click for markers:
+            google.maps.event.addListener(map, "click", function(event) {
+                var lat = event.latLng.lat();
+                var lng = event.latLng.lng();
+                addMarker(lat, lng);
+            });
+
+            heatmapUniform = new google.maps.visualization.HeatmapLayer({
+                data: getPointsUniform(),
+                map: map,
+                dissipating: true,
+                maxIntensity: 1,
+                radius: 10
+            });
+
+            heatmapSuccessRate = new google.maps.visualization.HeatmapLayer({
+                data: getPointsSuccessRate(),
+                map: null,
+                dissipating: true,
+                maxIntensity: 1,
+                radius: 10
+            });
+
+        }
+
+        function toggleHeatmap() {
+            $('#toggleButton').html(heatmapUniform.getMap() ? "Show Success Rate heatmap" : "Show Crime Rate heatmap")
+            heatmapUniform.setMap(heatmapUniform.getMap() ? null : map);
+            heatmapSuccessRate.setMap(heatmapSuccessRate.getMap() ? null : map);
+        }
+
+        function changeGradient() {
+            var gradient = [
+                'rgba(0, 255, 255, 0)',
+                'rgba(0, 255, 255, 1)',
+                'rgba(0, 191, 255, 1)',
+                'rgba(0, 127, 255, 1)',
+                'rgba(0, 63, 255, 1)',
+                'rgba(0, 0, 255, 1)',
+                'rgba(0, 0, 223, 1)',
+                'rgba(0, 0, 191, 1)',
+                'rgba(0, 0, 159, 1)',
+                'rgba(0, 0, 127, 1)',
+                'rgba(63, 0, 91, 1)',
+                'rgba(127, 0, 63, 1)',
+                'rgba(191, 0, 31, 1)',
+                'rgba(255, 0, 0, 1)'
+            ];
+            heatmapSuccessRate.set('gradient', heatmapSuccessRate.get('gradient') ? null : gradient);
+            heatmapUniform.set('gradient', heatmapUniform.get('gradient') ? null : gradient);
+        }
+
+        function increaseRadius() {
+            heatmapSuccessRate.set('radius', heatmapSuccessRate.get('radius') + 1);
+            heatmapUniform.set('radius', heatmapUniform.get('radius') + 1);
+        }
+
+        function decreaseRadius() {
+            heatmapSuccessRate.set('radius', heatmapSuccessRate.get('radius') - 1);
+            heatmapUniform.set('radius', heatmapUniform.get('radius') - 1);
+        }
+
+        function changeOpacity() {
+            heatmapSuccessRate.set('opacity', heatmapSuccessRate.get('opacity') ? null : 0.2);
+            heatmapUniform.set('opacity', heatmapUniform.get('opacity') ? null : 0.2);
+        }
+
+
+        // Heatmap data: success rate points
+        function getPointsSuccessRate() {
+            var array = crimeData.map(function(f) {
+                var heatmapData = {
+                    location: new google.maps.LatLng(f.lat, f.lng),
+                    weight: f.successRate / 100.0
+                }
+                return heatmapData;
+
+            });
+
+            return array;
+
+        }
+
+        // Heatmap data
+        function getPointsUniform() {
+            var array = crimeData.map(function(f) {
+                var heatmapData = {
+                    location: new google.maps.LatLng(f.lat, f.lng),
+                    weight: 1
+                }
+                return heatmapData;
+            });
+
+            return array;
+
+        }
+
+
+        $(window).load(function() {
+            $(".crimeButtons.btn-large").click();
+        });
+    </script>
+    <script async defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyACvEKNetGX5RzmPZRKMNjjSFGh-FReTcM&libraries=visualization"></script>
+</body>
+
+</html>
